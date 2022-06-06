@@ -1,0 +1,57 @@
+name: Infinite Codespaces Manager
+
+on:
+  workflow_dispatch:
+    inputs:
+      CODESPACE_ID:
+        description: 'Codespace ID (username-org-repo-ID)'     
+        required: true
+        type: string
+      CODESPACE_SELF-DELETE:
+        description: 'Self delete executor once the Codespace has been shut down'     
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  manager:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Set up gh auth
+        run: |-
+          echo ${{ secrets.CODESPACES_PAT }} | gh auth login --with-token
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          name: id_rsa
+          if_key_exists: replace
+          known_hosts: unnecessary
+
+      - name: Wake up Codespace
+        run: gh cs ssh -c $(gh cs ls --json name --template='{{range .}}{{printf "%s\n" .name}}{{end}}' | grep "${{ github.event.inputs.CODESPACE_ID }}") echo 'Beep Boop!' || true
+
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.CODESPACES_PAT }} 
+
+      - name: Create scheduled Action
+        run: |-
+          cat .github/workflows/executor-template.yml | sed s/option_id/${{ github.event.inputs.CODESPACE_ID }}/g | sed s/option_self_delete/${{ github.event.inputs.CODESPACE_SELF-DELETE }}/g > .github/workflows/executor_${{ github.event.inputs.CODESPACE_ID }}.yml
+
+      - name: Commit files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/executor_${{ github.event.inputs.CODESPACE_ID }}.yml
+          git commit -m "Actions: Push new executor Action (${{ github.event.inputs.CODESPACE_ID }})"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.CODESPACES_PAT }}
+          force: true
+          branch: ${{ github.ref }}

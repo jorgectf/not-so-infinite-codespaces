@@ -1,0 +1,59 @@
+name: Infinite Codespaces Executor for option_id
+
+on:
+  schedule:
+    - cron: '*/60 * * * *'
+    
+env:
+  CODESPACE_ID: 'option_id'
+  CODESPACE_SELF-DELETE: 'option_self_delete'
+
+jobs:
+  executor:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Set up gh auth
+      run: echo ${{ secrets.CODESPACES_PAT }} | gh auth login --with-token
+
+    - name: Retrieve machine status
+      run: |- 
+        cat <(echo STATUS=$(gh cs list --json name,state --template '{{range .}}{{printf "%s %s\n" .name .state}}{{end}}' | grep $(gh cs ls --json name --template='{{range .}}{{printf "%s\n" .name}}{{end}}' | grep "${{ env.CODESPACE_ID }}") | cut -d " " -f2) | tee -a $GITHUB_ENV)
+        
+    - name: Install SSH key
+      if: ${{ env.STATUS != 'Shutdown' && env.STATUS != 'ShuttingDown' }}
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        name: id_rsa
+        if_key_exists: replace
+        known_hosts: unnecessary
+
+    - name: Reset idle timeout (machine is not shut down)
+      if: ${{ env.STATUS != 'Shutdown' && env.STATUS != 'ShuttingDown' }}
+      run: gh cs ssh -c $(gh cs ls --json name --template='{{range .}}{{printf "%s\n" .name}}{{end}}' | grep "${{ env.CODESPACE_ID }}") echo 'Beep Boop!'
+
+    - name: Checkout repo (self-delete && shut down)
+      if: ${{ env.CODESPACE_SELF-DELETE == 'true' && (env.STATUS == 'Shutdown' || env.STATUS == 'ShuttingDown') }}
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.CODESPACES_PAT }}
+
+    - name: Action self delete (self-delete && shut down)
+      if: ${{ env.CODESPACE_SELF-DELETE == 'true' && (env.STATUS == 'Shutdown' || env.STATUS == 'ShuttingDown') }}
+      run: rm -rf .github/workflows/executor_${{ env.CODESPACE_ID }}.yml
+
+    - name: Commit files (self-delete && shut down)
+      if: ${{ env.CODESPACE_SELF-DELETE == 'true' && (env.STATUS == 'Shutdown' || env.STATUS == 'ShuttingDown') }}
+      run: |
+        git config user.name 'github-actions[bot]'
+        git config user.email 'github-actions[bot]@users.noreply.github.com'
+        git commit -a -m "Actions: Self delete executor (${{ env.CODESPACE_ID }})"
+        
+    - name: Push changes (self-delete && shut down)
+      if: ${{ env.CODESPACE_SELF-DELETE == 'true' && (env.STATUS == 'Shutdown' || env.STATUS == 'ShuttingDown') }}
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.CODESPACES_PAT }}
+        force: true
+        branch: ${{ github.ref }}
