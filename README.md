@@ -1,10 +1,14 @@
-# Infinite Codespaces
+# not-so-Infinite Codespaces
 
 > Use GitHub Codespaces as if there was no timeout
 
 ## Disclaimer
 
 Take into account that GitHub Codespaces is a paid feature. [More information](https://docs.github.com/en/billing/managing-billing-for-github-codespaces/about-billing-for-codespaces).
+
+## 12h timeout
+
+There's a 12h timeout I didin't take into account while developing this. Be aware that an instance will be shut down after 12h of use.
 
 ## Set up
 
